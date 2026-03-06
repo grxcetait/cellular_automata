@@ -2,6 +2,12 @@
 
 Python script for simulating Conway's Game of Life on a 2D square lattice with periodic boundary conditions.
 
+## Dependencies
+
+- numpy
+- matplotlip
+- scipy
+
 ## game_of_life.py
 
 This script has all the functions and classes to either run an animation or measurements of the simulation. 

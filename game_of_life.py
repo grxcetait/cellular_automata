@@ -14,17 +14,47 @@ import argparse
 from scipy.optimize import curve_fit
 
 class GameOfLife(object):
+    """
+    A class to simulate Conway's Game of Life on a 2D square lattice 
+    with periodic boundary conditions.
+    """
     
     def __init__(self, n, init_cond, p_alive):
+        """
+        Initialise the Game of Life parameters.
+
+        Parameters
+        ----------
+        n : int
+            Dimension of the square lattice (n x n).
+        init_cond : str
+            The initial configuration type ('random', 'glider', or 'blinker').
+        p_alive : float
+            Probability that a cell starts as 'alive' (1) in random initialisation.
+
+        Returns
+        -------
+        None.
+
+        """
         
         # Defining parameters for the lattice
         self.n = n # Size of the two-dimensional square lattice
         self.N = n * n # Total number of sites in the lattice
         self.init_cond = init_cond # Choice of the initial lattice 
         self.lattice = None
-        self.p_alive = p_alive
+        self.p_alive = p_alive # Choice of number of cells that are alive
         
     def initialise(self):
+        """
+        Create the initial lattice state based on the user-selected configuration.
+        States are mapped as: 0 (Dead), 1 (Alive).
+
+        Returns
+        -------
+        None.
+
+        """
         
         # Create a two-dimensional square lattice
         # Where 0 is dead and 1 is live
@@ -37,30 +67,14 @@ class GameOfLife(object):
             self.lattice = np.random.choice([0, 1], size = (self.n, self.n),
                                             p = [1 - self.p_alive, self.p_alive])
             
-        elif self.init_cond == 'randomglider':
+        elif self.init_cond == 'glider':
             
             # Create a lattice that has a glider
             self.lattice = np.zeros((self.n, self.n))
             
-            # Choose a random site
-            i = np.random.randint(self.n)
-            j = np.random.randint(self.n)
-            
-            # Put in a glider
-            self.lattice[i, j] = 1
-            self.lattice[(i + 1) % self.n, (j + 1) % self.n] = 1
-            self.lattice[(i + 2) % self.n, (j - 1) % self.n] = 1
-            self.lattice[(i + 2) % self.n, j] = 1
-            self.lattice[(i + 2) % self.n, (j + 1) % self.n] = 1
-            
-        elif self.init_cond == 'orderedglider':
-            
-            # Create a lattice that has a glider
-            self.lattice = np.zeros((self.n, self.n))
-            
-            # Start the glider at the top left of the lattice
-            i = 0
-            j = 0
+            # Start the glider in the middle of the lattice
+            i = self.n // 2 
+            j = self.n // 2 
             
             # Put in a glider
             self.lattice[i, j] = 1
@@ -84,6 +98,23 @@ class GameOfLife(object):
             self.lattice[i + 1, j] = 1
             
     def alive_or_dead(self, i, j):
+        """
+        Determine the next state of a specific cell (i, j) based on 
+        Conway's Game of Life rules using a 8 neighbours.
+
+        Parameters
+        ----------
+        i : int
+            Lattice corrdinate of the cell.
+        j : int
+            Lattice coordinate of the cell.
+
+        Returns
+        -------
+        int
+            DESCRIPTION.
+
+        """
         
         # Obtain the site 
         cell = self.lattice[i, j]
@@ -119,12 +150,18 @@ class GameOfLife(object):
             # Otherwise, it stays dead
             else:
                 return 0
-
-    def total_alive_sites(self):
-        
-        return np.sum(self.lattice)
-    
+                
     def update_lattice(self):
+        """
+        Update the entire lattice simultaneously (synchronous update) 
+        using an iterative loop.
+
+        Returns
+        -------
+        np.ndarray
+            The updated lattice state.
+
+        """
         
         # Keep old lattice to check for updates
         lattice_new = np.zeros((self.n, self.n))
@@ -141,8 +178,66 @@ class GameOfLife(object):
         self.lattice = lattice_new
                 
         return self.lattice
+
+    def update_lattice_faster(self):
+        """
+        Update the entire lattice simultaneously using vectorised NumPy roll 
+        operations, taking into account the 8 neighbours.
+
+        Returns
+        -------
+        None.
+
+        """
+        
+        # Count the number of alive nearest neighbours
+        live_neighbours = (np.roll(self.lattice,  1, axis=0) + # North
+                           np.roll(self.lattice, -1, axis=0) + # South
+                           np.roll(self.lattice,  1, axis=1) + # East
+                           np.roll(self.lattice, -1, axis=1) + # West
+                           np.roll(np.roll(self.lattice,  1, axis=0),  1, axis=1) + # NE
+                           np.roll(np.roll(self.lattice,  1, axis=0), -1, axis=1) + # NW
+                           np.roll(np.roll(self.lattice, -1, axis=0),  1, axis=1) + # SE
+                           np.roll(np.roll(self.lattice, -1, axis=0), -1, axis=1))   # SW
+              
+        # Make a new lattice of zeros
+        lattice_new = np.zeros((self.n, self.n), dtype = int)
+        
+        # Live cell survives with 2 or 3 neighbours
+        lattice_new[(self.lattice == 1) & ((live_neighbours == 2) | (live_neighbours == 3))] = 1
+        
+        # Dead cell becomes alive with exactly 3 neighbours
+        lattice_new[(self.lattice == 0) & (live_neighbours == 3)] = 1
+        
+        # Once done, update lattice
+        self.lattice = lattice_new
+
+    def total_alive_sites(self):
+        """
+        Count the total number of alive cells (state 1) in the current lattice.
+
+        Returns
+        -------
+        int
+            Sum of all values in the lattice array.
+
+        """
+        
+        # Calculate and return the total number of alive cells in the lattice
+        return np.sum(self.lattice)
         
     def center_of_mass(self):
+        """
+        Calculate the center of mass (COM) of all alive cells. 
+        Used primarily for tracking spaceships like gliders.
+
+        Returns
+        -------
+        float, float
+            The x and y coordinates of the center of mass. 
+            Returns (np.nan, np.nan) if the system is dead or touching a boundary.
+
+        """
         
         # Locate where the lattice has alive cells (1) this is the glider
         glider = np.argwhere(self.lattice == 1)
@@ -150,41 +245,72 @@ class GameOfLife(object):
         # If there are no alive cells, the pattern died out
         if len(glider) == 0:
             print("The system is dead. RIP.")
-            return None
+            return np.nan, np.nan
         
-        # Only continue if the glider is not at the boundaries
-        if np.all(glider[:, 1] != 0) and np.all(glider[:, 0] != 0):
-        
-            # Calculate the mean of the coordinates
-            x_cm = np.mean(glider[:, 0]) 
-            y_cm = np.mean(glider[:, 1]) 
-             
-            # Calculate the hypotenuse
-            r_cm = np.sqrt(x_cm**2 + y_cm**2)
+        # If the glider is at the boundaries, return np.nan
+        if np.any(glider == self.n - 1) or np.any(glider == 0):
             
-            # Return the centre of mass
-            return x_cm, y_cm, r_cm
+            return np.nan, np.nan
+ 
+        # Otherwise, calculate the mean of the coordinates
+        x_cm = np.mean(glider[:, 0]) 
+        y_cm = np.mean(glider[:, 1]) 
         
-        # If the glider is at the boundaries, do not calculate
-        else:
-            
-            return np.nan, np.nan, np.nan  
+        # Return the centre of mass
+        return x_cm, y_cm 
     
 
 class Simulation(object):
+    """
+    A class to manage the execution and visualisation of Game of Life experiments,
+    including animations, equilibrium distributions, and spaceship tracking.
+    """
     
-    def __init__(self, n, init_cond, steps):
+    def __init__(self, n, init_cond, steps, p_alive):
+        """
+        Initialise simulation parameters.
+
+        Parameters
+        ----------
+        n : int
+            Lattice size.
+        init_cond : str
+            Initial configuration type.
+        steps : int
+            Number of steps for animation or measurement trials.
+        p_alive : float
+            Density of alive cells for random init.
+
+        Returns
+        -------
+        None.
+
+        """
         
         # Defining parameters for the lattice
         self.n = n # Size of the two-dimensional square lattice
         self.N = n * n # Total number of sites in the square lattice
         self.init_cond = init_cond # Choice of the initial lattice 
         self.steps = steps # Choice of number of steps for the animation
+        self.p_alive = p_alive # Choice of number of cells that are alive
         
     def animate(self, steps):
+        """
+        Execute and display a real-time animation of the Game of Life evolution.
+
+        Parameters
+        ----------
+        steps : int
+            Number of frames to animate.
+
+        Returns
+        -------
+        None.
+
+        """
         
         # Initialise the lattice using the GameOfLife class
-        game_of_life = GameOfLife(self.n, self.init_cond)
+        game_of_life = GameOfLife(self.n, self.init_cond, self.p_alive)
         game_of_life.initialise()
         
         # Define the figure and axes for the animation
@@ -202,7 +328,7 @@ class Simulation(object):
         for s in range(steps):
             
             # Update lattice
-            game_of_life.update_lattice()
+            game_of_life.update_lattice_faster()
             
             # Update the animation 
             im.set_data(game_of_life.lattice)
@@ -215,44 +341,47 @@ class Simulation(object):
         plt.show()
         
     def equilibrium_check(self, active_sites, ind_cond = 10):
+        """
+        Check if the simulation has reached equilibrium by identifying 
+        static states (Period 1) or oscillators (Period 2 and 3).
+
+        Parameters
+        ----------
+        active_sites : list
+            Record of the total number of alive cells.
+        ind_cond : int, optional
+            The minimum window size required for the check. Default is 10.
+
+        Returns
+        -------
+        bool
+            True if equilibrium (periodicity) is detected, False otherwise.
+
+        """
         
         # If the array if not long enough, return False
         if len(active_sites) < ind_cond:
             return False
         
-        """
-        # Obtain the last __ elements of the array
-        last_elements = active_sites[-ind_cond:]
-        
-        # Check if the elements are all the same
-        all_same = np.all(last_elements == last_elements[0])
-        
-        # Checks if the elements are oscillating
-        is_oscillating = np.all(last_elements[2:] == last_elements[:-2])
-        
-        print(last_elements, all_same, is_oscillating)
-        
-        # If system has reached an active phase or absorbing state, return True
-        if all_same == True or is_oscillating == True:
+        # Check if it is static
+        # Checks to see if the last 10 elements are the same
+        if active_sites[-10:] == active_sites[-11:-1]:
+            #print("System is static (Period 1)")
+            #print(active_sites[-10:])
             return True
         
-        # Otherwise, return False
-        else:
-            return False
-        """
+        # Check if it is oscillating with a period of 2
+        # Checks to see if the last 10 elements are oscillating
+        elif active_sites[-10:] == active_sites[-12:-2]:
+            print("Oscilalting with period of 2")
+            print(active_sites[-12:])
+            return True
         
-        # Obtain the last __ elements of the array
-        last_elements = active_sites[-ind_cond:]
-        
-        # Calculate the mean and standard devation
-        #mean = np.mean(last_elements)
-        std = np.std(last_elements)
-        
-        # Define the threshold to be 1.5
-        threshold = 1.5
-        
-        # If the std is below the threshold, the system is in equilbrium
-        if std < threshold:
+        # Check if it is oscillating with a period of 3
+        # Checks to see if the last 9 elements are oscillating
+        elif active_sites[-9:] == active_sites[-12:-3]:
+            print("Oscilalting with period of 3")
+            print(active_sites[-12:])
             return True
         
         # If not, it is not in equilibrium
@@ -260,6 +389,22 @@ class Simulation(object):
             return False
         
     def equilibrium_measurements(self, filename, steps):
+        """
+        Run multiple random simulations and record the time taken for each 
+        to reach an absorbing or oscillating state.
+
+        Parameters
+        ----------
+        filename : str
+            File to save the equilibration times.
+        steps : int
+            The number of independent simulations to run.
+
+        Returns
+        -------
+        None.
+
+        """
         
         # Define datafiles output directory
         base_directory = os.path.dirname(os.path.abspath(__file__))
@@ -271,18 +416,19 @@ class Simulation(object):
         if not os.path.exists(datafiles_folder):
             os.makedirs(datafiles_folder)
         
-        # Initialise the lattice using the GameOfLife class
-        game_of_life = GameOfLife(self.n, self.init_cond)
-        
         # Make empty lists to hold data points
         equilibriation_time = []
-        no_active_sites = []
+        #no_active_sites = []
+        
+        # Define maximum time until it cuts out
+        max_time = 10000 
         
         # Iterate through simulation steps
         for s in range(steps):
             print(f"Simulating step = {s}/{steps}")
             
-            # Initialise the lattice
+            # Initialise the lattice using the GameOfLife class
+            game_of_life = GameOfLife(self.n, self.init_cond, self.p_alive)
             game_of_life.initialise()
             
             # Empty list to hold number of active sites
@@ -295,22 +441,25 @@ class Simulation(object):
             time = 0
             
             # Continue until equilibrium has been reached
-            while equilibrium == False:
+            while equilibrium == False and time < max_time:
                 
                 # Update lattice
-                game_of_life.update_lattice()
+                game_of_life.update_lattice_faster()
                 
                 active_sites.append(game_of_life.total_alive_sites())
                 
                 # Update time
                 time += 1
+                
+                if time == max_time - 1:
+                    print(active_sites[-10:])
+                    print("Maximum time reached.")
 
                 # Check if equilibrium has been reached
-                equilibrium = self.equilibrium_check(active_sites) # Can change ind_cond
+                equilibrium = self.equilibrium_check(active_sites) # Can change ind_cond if needed
                 
             # Append values to the lists
             equilibriation_time.append(time)
-            no_active_sites.append(active_sites)
             
         # Open in "a" (append) or "w" (overwrite) mode
         # Write the values into the specified file
@@ -319,13 +468,26 @@ class Simulation(object):
                 
                 # Get the time it took
                 t = equilibriation_time[i]
-                
-                # Get the final active site count (the last value in that sub-list)
-                final_count = no_active_sites[i][-1]
-                
-                f.write(f"{t},{final_count}\n")
+  
+                f.write(f"{t}\n")
                 
     def glider_measurements(self, steps, filename):
+        """
+        Track a glider's center of mass over time, accounting for periodic 
+        boundary conditions, to estimate displacement.
+
+        Parameters
+        ----------
+        steps : int
+            Number of steps to track the glider.
+        filename : str
+            File to save the COM coordinates and time.
+
+        Returns
+        -------
+        None.
+
+        """
         
         # Define datafiles output directory
         base_directory = os.path.dirname(os.path.abspath(__file__))
@@ -338,7 +500,7 @@ class Simulation(object):
             os.makedirs(datafiles_folder)
         
         # Initialise the lattice using the GameOfLife class
-        game_of_life = GameOfLife(self.n, self.init_cond)
+        game_of_life = GameOfLife(self.n, self.init_cond, self.p_alive)
         game_of_life.initialise()
         
         # Create empty lists to hold datapoints
@@ -347,39 +509,107 @@ class Simulation(object):
         r = []
         time = []
         
+        # Define differences in coordinates as 0 for now
+        x_diff = 0
+        y_diff = 0
+        
+        # Start counts of boundary jumps at 0
+        boundary_jump_x = 0
+        boundary_jump_y = 0
+        
         # Run the measurements for the total number of steps
         for s in range(steps):
             #print(f"Simulating step = {s}/{steps}")
             
             # Update lattice
-            game_of_life.update_lattice()
+            game_of_life.update_lattice_faster()
             
             # Calculate glider center of mass
-            x_cm, y_cm, r_cm = game_of_life.center_of_mass()
+            x_raw, y_raw = game_of_life.center_of_mass()
             
             # If the glider is crossing a boundary, do not append to list
-            if np.isnan(x_cm) or np.isnan(y_cm) or np.isnan(r_cm):
+            if np.isnan(x_raw) or np.isnan(y_raw):
                 continue
             
-            else:
+            # If the length of the array is long enough
+            if len(x) > 0:
+            
+                # Calculate the difference between current and previous location
+                x_diff = x_raw - (x[-1] - boundary_jump_x * self.n)
+                y_diff = y_raw - (y[-1] - boundary_jump_y * self.n)
+
+            # Take into account periodic boundary conditions
+            if x_diff > self.n / 2:
+                boundary_jump_x -= 1
                 
-                x.append(x_cm)
-                y.append(y_cm)
-                r.append(r_cm)
-                time.append(s)
+            elif x_diff < -self.n / 2:
+                boundary_jump_x += 1
+                
+            if y_diff > self.n / 2:
+                boundary_jump_y -= 1
+                
+            elif y_diff < -self.n / 2:
+                boundary_jump_y += 1
+        
+                
+            # Calculate the corrected centre of mass 
+            # Taking into account periodic boundaries
+            x_cm = x_raw + boundary_jump_x * self.n
+            y_cm = y_raw + boundary_jump_y * self.n
+            r_cm = np.sqrt(x_cm**2 + y_cm**2)
+            
+            # Append to the lists
+            x.append(x_cm)
+            y.append(y_cm)
+            r.append(r_cm)
+            time.append(s)
                 
         # Open in "a" (append) or "w" (overwrite) mode
         # Write the values into the specified file
-        with open(file_path, "a") as f:
+        with open(file_path, "w") as f:
             for i in range(len(x)):
                 
                 f.write(f"{x[i]},{y[i]},{r[i]},{time[i]}\n")
                 
-    # a straight line (y=Ax+B) function used for fitting
     def f(self, x, A, B): 
-        return A*x + B
+        """
+        Simple linear function for curve fitting (y = Ax + B).
+        
+        In the context of the glider tracking, A represents the velocity (speed) 
+        of the glider, and B represents the initial position offset.
+
+        Parameters
+        ----------
+        x : float or numpy.ndarray
+            The independent variable (time steps).
+        A : float
+            The slope of the line, representing the velocity (cells per step).
+        B : float
+            The y-intercept, representing the initial position at t=0.
+
+        Returns
+        -------
+        float or numpy.ndarray
+            The predicted position(s) corresponding to the input time step(s).
+
+        """
+        return A * x + B
             
     def plot_glider_measurements(self, filename):
+        """
+        Plot the displacement of the glider (x, y, and radial) over time and 
+        fit a linear model to estimate velocity.
+
+        Parameters
+        ----------
+        filename : str
+            Data file containing recorded coordinates.
+
+        Returns
+        -------
+        None.
+
+        """
         
         # Define datafiles output directory
         base_directory = os.path.dirname(os.path.abspath(__file__))
@@ -392,7 +622,7 @@ class Simulation(object):
             os.makedirs(plots_folder)
             
         # Create an empty list to store input data
-        input_data = []        
+        input_data = []
 
         # Read in the data from the specified text file
         try:
@@ -425,39 +655,58 @@ class Simulation(object):
             r_cm.append(r)
             time.append(t)
             
-        
+        # Convert to arrays
+        time = np.array(time)
+        x_cm = np.array(x_cm)
+        y_cm = np.array(y_cm)
+        r_cm = np.array(r_cm)
+
+        # Create a mask where x_cm is NOT nan
+        mask = np.isfinite(x_cm) & np.isfinite(time)
+
+        # Apply mask to both lists to keep them synchronized
+        time = time[mask]
+        x_cm = x_cm[mask]
+        y_cm = y_cm[mask]
+        r_cm = r_cm[mask]
+            
         fig, ax = plt.subplots(1,3, figsize = (16,4.5)) 
         plt.rcParams['font.size'] = 10
         t = np.arange(0,len(r_cm),1)   
         
-        # Fit the x-position data and time to a straight line
+        # --- Subplot 0: X-position ---
         popt, pcov = curve_fit(self.f, time, x_cm)
         ax[0].set_title("Glider X-position versus time")             
         ax[0].set_ylabel("Glider X-position")   
         ax[0].set_xlabel("Time")  
-        label = f'y = {popt[0]:.3f}t + {popt[1]:.3f}'
-        ax[0].plot(x_cm, 'bs', markersize=2, label=label)
+        # Plot the best fit line
+        ax[0].plot(time, self.f(time, *popt), 'k-', label=f'Fit: {popt[0]:.3f}t + {popt[1]:.3f}')
+        # Plot the raw data
+        ax[0].plot(time, x_cm, 'bs', markersize=2, label='Data')
         ax[0].legend(loc="upper right")
         
-        # Fit the y-position data and time to a straight line
+        # --- Subplot 1: Y-position ---
         popt, pcov = curve_fit(self.f, time, y_cm)
         ax[1].set_title("Glider Y-position versus time")             
         ax[1].set_ylabel("Glider Y-position")   
         ax[1].set_xlabel("Time")
-        label = f'y = {popt[0]:.3f}t + {popt[1]:.3f}'
-        ax[1].plot(y_cm, 'ro', markersize=2, label=label)
+        # Plot the best fit line
+        ax[1].plot(time, self.f(time, *popt), 'k-', label=f'Fit: {popt[0]:.3f}t + {popt[1]:.3f}')
+        # Plot the raw data
+        ax[1].plot(time, y_cm, 'ro', markersize=2, label='Data')
         ax[1].legend(loc="upper right")
         
-        # Fit the r-position data and time to a straight line
+        # --- Subplot 2: R-position ---
         popt, pcov = curve_fit(self.f, time, r_cm)
         ax[2].set_title("Glider R-position versus time")             
         ax[2].set_ylabel("Glider R-position")   
         ax[2].set_xlabel("Time") 
-        label = f'y = {popt[0]:.3f}t + {popt[1]:.3f}' 
-        ax[2].plot(r_cm, 'yo', markersize=2, label=label)
+        # Plot the best fit line
+        ax[2].plot(time, self.f(time, *popt), 'k-', label=f'Fit: {popt[0]:.3f}t + {popt[1]:.3f}')
+        # Plot the raw data
+        ax[2].plot(time, r_cm, 'yo', markersize=2, label='Data')
         ax[2].legend(loc="upper right")
         
-        # Fix any overlapping labels, titles or tick marks
         plt.tight_layout()
         
         # Save the plots to the plots folder
@@ -472,6 +721,20 @@ class Simulation(object):
         plt.show()
             
     def plot_equilibrium_distribution(self, filename):
+        """
+        Generate a histogram showing the distribution of times needed for 
+        random Game of Life lattices to reach equilibrium.
+
+        Parameters
+        ----------
+        filename : str
+            Data file containing recorded times.
+
+        Returns
+        -------
+        None.
+
+        """
         
         # Define datafiles output directory
         base_directory = os.path.dirname(os.path.abspath(__file__))
@@ -501,29 +764,25 @@ class Simulation(object):
             
         # Make empty lists to store data
         equilibriation_time = []
-        no_active_sites = []
+        #no_active_sites = []
         
         # Iterate through input data and append to empty lists
-        for i in range(0, len(input_data), 2):
+        for i in range(0, len(input_data)):
             
             # Obtain vlaue from input data
             time = float(input_data[i])
-            active_sites = float(input_data[i+1])
             
             # Append to lists
             equilibriation_time.append(time)
-            no_active_sites.append(active_sites)
-            
-        # Calculate weighting for histogram
-        weights = np.ones_like(equilibriation_time) / len(equilibriation_time) * 100
-        
+
         # Plot a histogram of the equilibriation time
-        ax1.hist(equilibriation_time, weights = weights, bins = 30,
+        ax1.hist(equilibriation_time, bins = 30,
                 color = "skyblue", edgecolor = "black")
-        ax1.set_ylabel("Probability (%)")
-        ax1.set_xlabel("Time to equilibriate")
-        ax1.set_title("Distribution of the time to equilibriation")
+        ax1.set_ylabel("Counts", fontsize = 14)
+        ax1.set_xlabel("Time to equilibriate", fontsize = 14)
+        ax1.set_title("Distribution of the time to equilibriation", fontsize = 16)
         ax1.grid(True)
+        ax1.tick_params(axis = 'both', which = 'major', labelsize = 12)
         
         # Fix any overlapping labels, titles or tick marks
         plt.tight_layout()
@@ -547,29 +806,29 @@ if __name__ == "__main__":
     parser.add_argument("--n", type = int, default = 50, help = "Lattice size (n x n)")
     parser.add_argument("--steps", type = int, default = 1000, help = "Number of simulation steps")
     parser.add_argument("--init", type = str, default = "random", 
-                        choices = ["random", "randomglider", "orderedglider", "blinker"],
+                        choices = ["random", "glider", "blinker"],
                         help = "Initial state for Game of Life")
-    parser.add_argument("--type", type = str, default = "ani", 
+    parser.add_argument("--mode", type = str, default = "ani", 
                         choices = ["ani", "mea"],
-                        help = "Simulation or measurements")
+                        help = "Animation or measurements")
     parser.add_argument("--p_alive", type = float, default = 0.5, help = "Probability of a site being alive")
-
+        
     args = parser.parse_args()
         
     # Game of Life uses n, init, and steps
-    sim = Simulation(n = args.n, init_cond = args.init, steps = args.steps)
+    sim = Simulation(n = args.n, init_cond = args.init, steps = args.steps, p_alive = args.p_alive)
     
-    if args.init == "random" and args.type == "mea":
+    if args.init == "glider" and args.mode == "mea":
         
-        filename = "game_of_life_equilibrium_distribution_500_systems_1.txt" # Change the name
+        filename = f"game_of_life_equilibrium_distribution_{args.steps}_systems_8_glider.txt" # Change the name
         sim.equilibrium_measurements(filename, steps = args.steps)
         sim.plot_equilibrium_distribution(filename)
-        
-    elif (args.init == "orderedglider" or args.init == "randomglider") and args.type == "mea":
-        
-        filename = "game_of_life_glider_measurements_ordered_glider_100_steps_1.txt"
-        #sim.glider_measurements(filename = filename, steps = 100)
-        sim.plot_glider_measurements(filename)
+       
+    #elif args.init == "glider" and args.mode == "mea":
+
+     #   filename = f"game_of_life_glider_measurements_{args.steps}_steps_5.txt"
+      #  sim.glider_measurements(filename = filename, steps = args.steps)
+       # sim.plot_glider_measurements(filename)
         
     else:
     

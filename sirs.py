@@ -13,8 +13,31 @@ from matplotlib.colors import ListedColormap
 import argparse
 
 class SIRS(object):
+    """
+    A class to represent a Susceptible-Infected-Recovered-Susceptible (SIRS)
+    model on a 2D lattice.
+    """
     
     def __init__(self, n, p_S, p_I, p_R):
+        """
+        Initialise the SIRS lattice parameters
+
+        Parameters
+        ----------
+        n : int
+            Dimension of the square lattice (n x n)
+        p_S : float
+            Probability of a Susceptible cell becoming Infected (S -> I).
+        p_I : float
+            Probability of an Infected cell becoming Recovered (I -> R).
+        p_R : float
+            Probability of a Recovered cell becoming Susceptible (R -> S).
+
+        Returns
+        -------
+        None.
+
+        """
         
         # Defining parameters for the lattice
         self.n = n # Size of the two-dimensional square lattice
@@ -25,6 +48,15 @@ class SIRS(object):
         self.p_R = p_R # Probability of recovered to susceptible
         
     def initialise(self):
+        """
+        Randomly initialise the lattice states based on normalised transition probabilities.
+        States are mapped as: -1 (Infected), 0 (Susceptible), 1 (Recovered).
+
+        Returns
+        -------
+        None.
+
+        """
         
         # Calculate the sum of probabilities
         p_tot = self.p_S + self.p_I + self.p_R
@@ -38,7 +70,23 @@ class SIRS(object):
                                         p = p_norm)
 
         
-    def infected_or_susceptible_or_recovered(self, i, j, p_S, p_I, p_R):
+    def infected_or_susceptible_or_recovered(self, i, j):
+        """
+        Determine the next state of a specific cell (i, j) using Monte Carlo rules.
+
+        Parameters
+        ----------
+        i : int
+            Lattice coordinate of the cell.
+        j : int
+            Lattice coordinate of the cell
+
+        Returns
+        -------
+        int
+            The new state of the cell (-2, -1, 0, or 1)
+
+        """
         
         # Obtain the site 
         cell = self.lattice[i, j]
@@ -49,7 +97,7 @@ class SIRS(object):
                               self.lattice[i, (j - 1) % self.n],
                               self.lattice[i, (j + 1) % self.n]
                               ]
-        
+    
         # Start with all counts at zero
         infected = 0
         susceptible = 0
@@ -80,7 +128,7 @@ class SIRS(object):
             if infected >= 1: 
                 
                 # The cell will be infected with probability p_S
-                return np.random.choice([0, -1], p = [1 - p_S, p_S])
+                return np.random.choice([0, -1], p = [1 - self.p_S, self.p_S])
             
             else:
                 
@@ -91,61 +139,107 @@ class SIRS(object):
         elif cell == -1:
             
             # The cell will be recovered with probability p_I
-            return np.random.choice([-1, 1], p = [1 - p_I, p_I])
+            return np.random.choice([-1, 1], p = [1 - self.p_I, self.p_I])
             
         # If the cell is recovered ...
         else:
             
             # The cell will be susceptible with probability p_S
-            return np.random.choice([1, 0], p = [1 - p_R, p_R])
+            return np.random.choice([1, 0], p = [1 - self.p_R, self.p_R])
         
     def update_lattice(self):
+        """
+        Perform one full Monte Carlo Sweep (N random updates) across the lattice.
+
+        Returns
+        -------
+        None.
+
+        """
         
-        # Keep old lattice to check for updates
-        lattice_new = np.zeros((self.n, self.n))
-        
-        # Iterate through the whole lattice
-        # Update the new lattice at each iteration
-        for i in range(self.n):
-            
-            for j in range(self.n):
-            
-                lattice_new[i, j] = self.infected_or_susceptible_or_recovered(i, j, self.p_S, self.p_I, self.p_R)
-                
-        # Once done, update the main lattice simultaneously
-        self.lattice = lattice_new
-                
-        return self.lattice
-    
-    def count_infected(self):
-        
-        # Count and return the number of sites that are infected
-        return np.count_nonzero(self.lattice == -1)
-    
-    def vaccinate(self, frac_immunity):
-        
-        for vac in range(int(frac_immunity * self.N)):
+        # Iterate N times through the lattice
+        for sweep in range(self.N):
             
             # Choose a random site (i, j) in the lattice of size (n x n)
             i = np.random.randint(self.n)
             j = np.random.randint(self.n)
             
-            # Continue to pick another random site until a non-vacinated one is found
-            while self.lattice[i, j] == -2:
-                
-                # Choose another random site (i, j) in the lattice of size (n x n)
-                i = np.random.randint(self.n)
-                j = np.random.randint(self.n)
-                
-            # Vaccinate the chosen site
-            self.lattice[i, j] = -2
+            # Check for updates
+            self.lattice[i, j] = self.infected_or_susceptible_or_recovered(i, j)
+    
+    def count_infected(self):
+        """
+        Count the total number of infected cells currently in the lattice.
+
+        Returns
+        -------
+        int
+            Number of cells with state -1.
+
+        """
+    
+        # Count and return the total number of infected cells in the lattice
+        return np.count_nonzero(self.lattice == -1)
+    
+    def vaccinate(self, frac_immunity):
+        """
+        Randomly set a fraction of the lattice to a permanent immune state (-2).
+
+        Parameters
+        ----------
+        frac_immunity : float
+            The fraction of the total population to be vaccinated (0 to 1).
+
+        Returns
+        -------
+        np.ndarray
+            The updated lattice.
+
+        """
+        
+        # Calculate the number of sites to vaccinate
+        n_vaccinate = int(frac_immunity * self.N)
+        
+        # Pick unique inficies from a flattened version of the N sites
+        # replace = False so the same site is not picked twice
+        indices = np.random.choice(self.N, size = n_vaccinate, replace = False)
+        
+        # Iterate through the indicies
+        for idx in indices:
             
-        return self.lattice
+            # Update the lattice
+            i, j = divmod(idx, self.n)
+            self.lattice[i, j] = -2
             
 
 class Simulation(object):
+    """
+    A class to handle the execution, measurement, and visualisation 
+    of the SIRS simulation.
+    """
     
     def __init__(self, n, steps, p_S, p_I, p_R):
+        """
+        Initialise the simulation environment.
+
+        Parameters
+        ----------
+        n : int
+            Lattice dimension.
+        steps : int
+            Number of steps for animation or measurement.
+        p_S : float
+            Probability of infection from suscetible.
+        p_I : float
+            Probability of recovered from infected.
+        p_R : TYPE
+            Probability of susceptible from recovered.
+
+        Returns
+        -------
+        None.
+
+        """
         
         # Defining parameters for the lattice
         self.n = n # Size of the two-dimensional square lattice
@@ -156,6 +250,19 @@ class Simulation(object):
         self.p_R = p_R # Probability of recovered to susceptible
     
     def animate(self, steps):
+        """
+        Run and display an animation of the SIRS model spreading.
+
+        Parameters
+        ----------
+        steps : int
+            Total number of animation frames.
+
+        Returns
+        -------
+        None.
+
+        """
         
         # Initialise the lattice using the SIRS class
         sirs = SIRS(self.n, self.p_S, self.p_I, self.p_R)
@@ -165,14 +272,14 @@ class Simulation(object):
         fig, ax = plt.subplots()
         
         # Define custom cmap 
-        sirs_cmap = ListedColormap(["#e74c3c", "#2c3e50", "#27ae60"]) # red, black, green
-        #sirs_cmap = ListedColormap(["#e74c3c", "#1a2a6c", "#5dade2"]) # dark blue, light blue, red
+        # Use 4 colors: Grey (Vaccinated), Red (Infected), Black (Susceptible), Green (Recovered)
+        sirs_cmap = ListedColormap(["#95a5a6", "#e74c3c", "#2c3e50", "#27ae60"])
         
         # Initialise the image object
-        # vmin/vmax ensure -1 (infected) is red, 0 (susceptible) is black, 
+        # vmin/vmax ensure -2 (vaccinated) is grey, -1 (infected) is red, 0 (susceptible) is black, 
         # and 1 (alive) is green consistently
         im = ax.imshow(sirs.lattice, cmap = sirs_cmap,
-                       vmin = -1, vmax = 1)
+                       vmin = -2, vmax = 1)
         
         # Run the animation for the total number of steps
         for s in range(steps):
@@ -191,11 +298,39 @@ class Simulation(object):
         plt.show()
         
     def calculate_average_infected(self, tot_infected_list):
+        """
+        Calculate the mean fraction of infected sites from a list of measurements.
+
+        Parameters
+        ----------
+        tot_infected_list : list of int
+            List containing counts of infected sites at different time steps.
+
+        Returns
+        -------
+        float
+            The average infected fraction <I>/N.
+
+        """
         
         # Calculate and return the mean fraction of infected sites
         return np.mean(tot_infected_list) / self.N
     
     def calculate_variance_infected(self, tot_infected_list):
+        """
+        Calculate the normalised variance of the infected population.
+
+        Parameters
+        ----------
+        tot_infected_list : list of int
+            Counts of infected sites.
+
+        Returns
+        -------
+        float
+            The normalized variance: (<I^2> - <I>^2)/N.
+
+        """
         
         # Convert to numpy array
         tot_infected_list = np.array(tot_infected_list)
@@ -206,6 +341,20 @@ class Simulation(object):
         return (mean_infected_squared - mean_infected**2) / self.N
     
     def bootstrap_method(self, data):
+        """
+        Estimate the standard error of the variance using the Bootstrap resampling method.
+
+        Parameters
+        ----------
+        data : list or np.ndarray
+            The population data to resample.
+
+        Returns
+        -------
+        float
+            Standard deviation of the resampled variances.
+
+        """
         
         # Convert to numpy array
         data = np.array(data)
@@ -224,10 +373,9 @@ class Simulation(object):
              resample = data[ind]
              
              # Calculate specific heat accordingly
-             #value = np.var(resample) / (self.N * self.kbT**2)
              mean_E_sq = np.mean(resample**2)
-             mean_E = np.mean(resample)**2
-             value = (mean_E_sq - mean_E) / self.N
+             mean_E = np.mean(resample)
+             value = (mean_E_sq - mean_E**2) / self.N
              
              # Append to the list
              resampled_values.append(value)
@@ -237,6 +385,20 @@ class Simulation(object):
         return np.std(np.array(resampled_values))
         
     def average_measurements(self, filename):
+        """
+        Sweep p_S and p_R to record the average infected fraction across the
+        phase space.
+
+        Parameters
+        ----------
+        filename : str
+            Name of the output text file to save the results.
+
+        Returns
+        -------
+        None.
+
+        """
         
         # Define datafiles output directory
         base_directory = os.path.dirname(os.path.abspath(__file__))
@@ -295,6 +457,19 @@ class Simulation(object):
                     f.write(f"{p_S},{p_R},{mean_infected}\n")
                     
     def variance_measurements(self, filename):
+        """
+        Perform a sweep of p_S to measure variance and its error near phase transitions.
+
+        Parameters
+        ----------
+        filename : str
+            Output text file name.
+
+        Returns
+        -------
+        None.
+
+        """
         
         # Define datafiles output directory
         base_directory = os.path.dirname(os.path.abspath(__file__))
@@ -353,6 +528,20 @@ class Simulation(object):
                 f.write(f"{p_S},{p_R},{variance_infected},{variance_infected_err}\n")
                 
     def immunity_measurements(self, filename):
+        """
+        Measure the average infected fraction as a function of the vaccinated 
+        fraction (immunity).
+
+        Parameters
+        ----------
+        filename : str
+            Output text file name.
+
+        Returns
+        -------
+        None.
+
+        """
         
         # Define datafiles output directory
         base_directory = os.path.dirname(os.path.abspath(__file__))
@@ -379,14 +568,11 @@ class Simulation(object):
             # Initialise the lattice using the SIRS class
             sirs = SIRS(self.n, p_S, p_I, p_R)
             sirs.initialise()
-            print(sirs.lattice)
             
             # Vaccinate the lattice
             sirs.vaccinate(frac)
             # Print how many sites are actually vaccinated
             print(f"Number of vaccinated sites: {np.count_nonzero(sirs.lattice == -2)}")
-            print(sirs.lattice)
-            
             
             # Start counts at zero
             counts = 0
@@ -408,6 +594,13 @@ class Simulation(object):
                 if counts < 100:
                     continue
                 
+                # If there are no infected cells, break the loop
+                if sirs.count_infected() == 0:
+                    
+                    # Append zero to the list
+                    infected_list.append(sirs.count_infected())
+                    break
+                
                 # Take a measurement every sweep
                 # Count and append the total number of infected sites
                 infected_list.append(sirs.count_infected())
@@ -421,6 +614,19 @@ class Simulation(object):
                 f.write(f"{frac},{mean_infected}\n")
                  
     def plot_immunity(self, filename):
+        """
+        Generate and save a plot of <I>/N versus the fraction of immune agents.
+
+        Parameters
+        ----------
+        filename : str
+            The data file to read from.
+
+        Returns
+        -------
+        None.
+
+        """
         
         # Define datafiles output directory
         base_directory = os.path.dirname(os.path.abspath(__file__))
@@ -448,7 +654,7 @@ class Simulation(object):
         except FileNotFoundError:
             print(f"Error: Could not find {filename_path}")
         
-        # Create emptry lists to hold data 
+        # Create empty lists to hold data 
         frac_immunity_array = []
         mean_infected_array = []
         
@@ -469,14 +675,15 @@ class Simulation(object):
                 markersize=4, linewidth=1.5, label=r'$\langle I \rangle / N$')
         
         # Labels and formatting
-        ax.set_xlabel(r"Fraction of Immune Agents $f_{Im}$", fontsize=12)
-        ax.set_ylabel(r"Average Infected Fraction $\langle I \rangle / N$", fontsize=12)
-        ax.set_title(r"SIRS Model: Effect of Vaccination ($p_S=p_I=p_R=0.5$)", fontsize=14)
+        ax.set_xlabel(r"Fraction of Immune Agents $f_{Im}$", fontsize=14)
+        ax.set_ylabel(r"Average Infected Fraction $\langle I \rangle / N$", fontsize=14)
+        ax.set_title(r"SIRS Model: Effect of Vaccination ($p_S=p_I=p_R=0.5$)", fontsize=16)
         
         # Add a horizontal line at 0 to clearly show when the infection is gone
         ax.axhline(0, color='black', lw=0.8, linestyle='--')
         
         ax.grid(True, linestyle=':', alpha=0.6)
+        ax.tick_params(axis = 'both', which = 'major', labelsize = 12)
         ax.legend()
 
         plt.tight_layout()
@@ -493,6 +700,19 @@ class Simulation(object):
         plt.show()
                 
     def plot_average_measurements(self, filename):
+        """
+        Generate and save a 2D phase diagram (heatmap) of average infection.
+
+        Parameters
+        ----------
+        filename : str
+            The data file to read from.
+
+        Returns
+        -------
+        None.
+
+        """
         
         # Define datafiles output directory
         base_directory = os.path.dirname(os.path.abspath(__file__))
@@ -517,7 +737,7 @@ class Simulation(object):
         except FileNotFoundError:
             print(f"Error: Could not find {filename_path}")
         
-        # Create emptry lists to hold data
+        # Create empty lists to hold data
         p_S_array = []
         p_R_array = []
         mean_infected_array = []
@@ -536,31 +756,29 @@ class Simulation(object):
             mean_infected_array.append(mean_infected)
         
         # Get unique values to find grid dimensions
+        # Figures out how many unique steps were taken
         unique_ps = np.unique(p_S_array)
         unique_pr = np.unique(p_R_array)
         
         # Reshape data into a 2D grid
-        # This assumes your data was saved with p_S as the outer loop 
-        # and p_R as the inner loop.
         z_grid = np.array(mean_infected_array).reshape(len(unique_ps), len(unique_pr))
 
         # Create the plot
         fig, ax = plt.subplots(figsize=(8, 7))
         
-        # FLIPPED LOGIC:
-        # We no longer transpose (grid.T) if we want the outer loop (p_S) 
-        # to remain as the Y-axis and the inner loop (p_R) to be the X-axis.
+        # Plot the 2D grid
         im = ax.imshow(z_grid, origin='lower', extent=[0, 1, 0, 1], 
-                       aspect='auto', cmap='magma')
+                       aspect='auto', cmap='magma', interpolation='none')
         
-        # Update labels to reflect the flipped axes
-        ax.set_title(r"Phase Diagram ($\langle I \rangle / N$)", fontsize=14)
-        ax.set_xlabel(r"$p_{R \rightarrow S}$", fontsize=12) # Now on X-axis
-        ax.set_ylabel(r"$p_{S \rightarrow I}$", fontsize=12) # Now on Y-axis
+        # Labels and formatting
+        ax.set_title(r"Phase Diagram ($\langle I \rangle / N$)", fontsize=16)
+        ax.set_xlabel(r"$p_{R \rightarrow S}$", fontsize=14) # Now on X-axis
+        ax.set_ylabel(r"$p_{S \rightarrow I}$", fontsize=14) # Now on Y-axis
+        ax.tick_params(axis = 'both', which = 'major', labelsize = 12)
         
         # Add a colorbar to quantify the average fraction of infected sites
         cbar = plt.colorbar(im)
-        cbar.set_label(r"Avgerage Infected Fraction $\langle I \rangle / N$", rotation=270, labelpad=20)
+        cbar.set_label(r"Average Infected Fraction $\langle I \rangle / N$", rotation=270, labelpad=20)
         
         # Fix any overlapping labels, titles or tick marks
         plt.tight_layout()
@@ -577,6 +795,19 @@ class Simulation(object):
         plt.show()
             
     def plot_variance_measurements(self, filename):
+        """
+        Generate and save a plot of normalised variance with error bars.
+
+        Parameters
+        ----------
+        filename : str
+            The data file to read from.
+
+        Returns
+        -------
+        None.
+
+        """
         
         # Define datafiles output directory
         base_directory = os.path.dirname(os.path.abspath(__file__))
@@ -627,11 +858,12 @@ class Simulation(object):
                     fmt='o-', color='red', ecolor='black', markerfacecolor = 'black', markeredgecolor = 'black',
                     capsize=3, elinewidth=1, markeredgewidth=1, markersize = 4)
         
-        # Labels and formatting as required to show the phase transition
-        ax.set_xlabel(r"Infection Probability $p_{S \rightarrow I}$", fontsize=12)
-        ax.set_ylabel(r"Normalized Variance $(\langle I^2 \rangle - \langle I \rangle^2)/N$", fontsize=12)
-        ax.set_title(r"SIRS Variance Cut ($p_{R \rightarrow S} = 0.5$, $p_{I \rightarrow R} = 0.5$)", fontsize=14)
+        # Labels and formatting to show the phase transition
+        ax.set_xlabel(r"Infection Probability $p_{S \rightarrow I}$", fontsize=14)
+        ax.set_ylabel(r"Normalised Variance $(\langle I^2 \rangle - \langle I \rangle^2)/N$", fontsize=14)
+        ax.set_title(r"SIRS Variance Cut ($p_{R \rightarrow S} = 0.5$, $p_{I \rightarrow R} = 0.5$)", fontsize=16)
         ax.grid(True, linestyle='--', alpha=0.7)
+        ax.tick_params(axis = 'both', which = 'major', labelsize = 12)
         ax.legend()
         
         # Save the plots to the plots folder
@@ -656,10 +888,10 @@ if __name__ == "__main__":
     parser.add_argument("--p_S", type=float, default=0.3, help="S -> I infection probability")
     parser.add_argument("--p_R", type=float, default=0.2, help="I -> R recovery probability")
     parser.add_argument("--p_I", type=float, default=0.5, help="R -> S immunity loss probability")
-    parser.add_argument("--type", type = str, default = "ani", 
+    parser.add_argument("--mode", type = str, default = "ani", 
                         choices = ["ani", "mea"],
-                        help = "Simulation or measurements")
-    parser.add_argument("--mea", type = str, default = "heatmap", 
+                        help = "Animation or measurements")
+    parser.add_argument("--measure", type = str, default = "heatmap", 
                          choices = ["average", "variance", "immunity"],
                          help = "Average or variance measurements")
 
@@ -671,24 +903,24 @@ if __name__ == "__main__":
                      p_R=args.p_R, 
                      p_I=args.p_I)
         
-    if args.type == "ani":
+    if args.mode == "ani":
         
         sim.animate(steps = args.steps)
         
-    if args.type == "mea" and args.mea == "average":
+    if args.mode == "mea" and args.measure == "average":
         
-        filename = "sirs_average_measurements_1.txt"
-        #sim.average_measurements(filename)
+        filename = "sirs_average_measurements_3.txt"
+        sim.average_measurements(filename)
         sim.plot_average_measurements(filename)
         
-    if args.type == "mea" and args.mea == "immunity":
+    if args.mode == "mea" and args.measure == "immunity":
         
-        filename = "sirs_immunity_measurements_1.txt"
-        #sim.immunity_measurements(filename)
+        filename = "sirs_immunity_measurements_3.txt"
+        sim.immunity_measurements(filename)
         sim.plot_immunity(filename)
         
-    else:
+    if args.mode == "mea" and args.measure == "variance":
         
-        filename = "sirs_variance_measurements_2.txt"
-        #sim.variance_measurements(filename)
+        filename = "sirs_variance_measurements_4.txt"
+        sim.variance_measurements(filename)
         sim.plot_variance_measurements(filename)

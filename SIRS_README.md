@@ -2,6 +2,13 @@
 
 Python script for simulating the Susceptible-Infected-Recovered-Susceptible (SIRS) epidemic model on a 2D square lattice with periodic boundary conditions.
 
+## Dependencies
+
+- numpy
+- matplotlip
+- scipy
+- os
+
 ## sirs.py
 
 This script has all the functions and classes to either run an animation or measurements of the simulation.
